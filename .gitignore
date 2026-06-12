@@ -1,0 +1,10 @@
+CLAUDE.md
+venv/
+__pycache__/
+*.pyc
+*.pyo
+docs/
+
+# Archivos generados por los scripts
+weights.json
+houses.csv
