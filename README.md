@@ -241,6 +241,7 @@ python3 src/logreg_train.py data/dataset_train.csv --optimizer sgd --lr 0.01 --e
 python3 src/logreg_train.py data/dataset_train.csv --optimizer mini-batch --batch-size 32
 ```
 
+
 All three converge to the same accuracy on this dataset. `describe.py` also includes bonus statistics beyond the mandatory 8: `Variance`, `Range`, `IQR`, `Skewness` and `Kurtosis`.
 
 ---
