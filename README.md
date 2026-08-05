@@ -209,15 +209,17 @@ The classifier must reach a minimum accuracy of **98%**.
 
 ## 🧙 Sorting Hat Quiz
 
-An interactive GUI quiz that uses the trained model in real time.
+An interactive GUI quiz that runs real inference through the trained model — no separate heuristic, no vote counting.
 
 ```bash
-# Train first, then launch the quiz
+# Train first, then launch the quiz (run both from the project root)
 python3 src/logreg_train.py data/dataset_train.csv
 python3 src/quiz.py
 ```
 
-A language selection screen lets you choose **English** or **Spanish** before starting. Answer 13 questions about your magical abilities — one per subject. Each answer aligns with the characteristic performance level of one house in that subject. The Sorting Hat reveals your house with a confidence breakdown for all four.
+A language selection screen lets you choose **English** or **Spanish** before starting. Answer 13 questions about your magical abilities — one per subject. Each answer (A-D) represents a performance level, mapped to the corresponding percentile (15th / 40th / 65th / 90th) of that subject's real score distribution in `dataset_train.csv`. The resulting 13 values are normalized with the same `norm_means` / `norm_stds` computed at training time and fed through `sigmoid(θᵀx)` for each of the 4 house classifiers — the exact inference `logreg_predict.py` uses. The Sorting Hat reveals your house with a confidence breakdown for all four.
+
+> `quiz.py` resolves `weights.json` and `data/dataset_train.csv` as relative paths, so it must be run from the project root — same as every other script.
 
 <div align="center">
   <img src="media/Quiz.png" width="48%" />

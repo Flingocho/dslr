@@ -1,4 +1,7 @@
 import sys
+import json
+import pandas as pd
+import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QProgressBar,
@@ -15,33 +18,54 @@ HOUSE_COLORS = {
     'Slytherin':   ('#1e8449', '🐍'),
 }
 
-# For each feature, which house corresponds to each answer option (A=0 … D=3).
-# Order derived from per-house means in the training dataset, ascending.
-HOUSE_ORDER = {
-    'Arithmancy':                    ['Gryffindor', 'Slytherin',  'Ravenclaw', 'Hufflepuff'],
-    'Astronomy':                     ['Slytherin',  'Ravenclaw',  'Gryffindor','Hufflepuff'],
-    'Herbology':                     ['Gryffindor', 'Slytherin',  'Hufflepuff','Ravenclaw'],
-    'Defense Against the Dark Arts': ['Hufflepuff', 'Gryffindor', 'Ravenclaw', 'Slytherin'],
-    'Divination':                    ['Slytherin',  'Gryffindor', 'Ravenclaw', 'Hufflepuff'],
-    'Muggle Studies':                ['Gryffindor', 'Hufflepuff', 'Slytherin', 'Ravenclaw'],
-    'Ancient Runes':                 ['Hufflepuff', 'Slytherin',  'Gryffindor','Ravenclaw'],
-    'History of Magic':              ['Gryffindor', 'Ravenclaw',  'Slytherin', 'Hufflepuff'],
-    'Transfiguration':               ['Gryffindor', 'Hufflepuff', 'Ravenclaw', 'Slytherin'],
-    'Potions':                       ['Gryffindor', 'Hufflepuff', 'Ravenclaw', 'Slytherin'],
-    'Care of Magical Creatures':     ['Gryffindor', 'Slytherin',  'Hufflepuff','Ravenclaw'],
-    'Charms':                        ['Gryffindor', 'Slytherin',  'Hufflepuff','Ravenclaw'],
-    'Flying':                        ['Slytherin',  'Hufflepuff', 'Ravenclaw', 'Gryffindor'],
-}
+WEIGHTS_PATH = 'weights.json'
+TRAIN_DATA_PATH = 'data/dataset_train.csv'
+
+# Each answer option (A=0 … D=3) stands for a performance level, mapped to
+# this percentile of the real per-feature distribution in the training set.
+ANSWER_PERCENTILES = [15, 40, 65, 90]
 
 
-def predict_house(answers: dict) -> tuple[str, dict]:
-    """Vote-based prediction. Each answer casts one vote for the corresponding house."""
-    votes = {h: 0 for h in HOUSES}
-    for feature, option_idx in answers.items():
-        house = HOUSE_ORDER[feature][option_idx]
-        votes[house] += 1
-    total = sum(votes.values())
-    probs = {h: v / total for h, v in votes.items()}
+def load_model(path=WEIGHTS_PATH):
+    with open(path) as f:
+        return json.load(f)
+
+
+def sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-np.clip(z, -500, 500)))
+
+
+def percentile(sorted_vals, p):
+    n = len(sorted_vals)
+    idx = p / 100.0 * (n - 1)
+    lo = int(idx)
+    hi = min(lo + 1, n - 1)
+    frac = idx - lo
+    return sorted_vals[lo] + frac * (sorted_vals[hi] - sorted_vals[lo])
+
+
+def compute_answer_values(features, path=TRAIN_DATA_PATH):
+    """For each feature, the numeric value each answer option (A-D) represents."""
+    df = pd.read_csv(path)
+    answer_values = {}
+    for feature in features:
+        vals = sorted(v for v in df[feature] if v == v)
+        answer_values[feature] = [percentile(vals, p) for p in ANSWER_PERCENTILES]
+    return answer_values
+
+
+def predict_house(answers: dict, model: dict, answer_values: dict) -> tuple[str, dict]:
+    """Run the trained one-vs-all logistic regression on the quiz answers."""
+    features = model['features']
+    x = np.array([answer_values[f][answers[f]] for f in features])
+    means = np.array(model['norm_means'])
+    stds = np.array(model['norm_stds'])
+    x_norm = (x - means) / stds
+    x_b = np.concatenate([[1.0], x_norm])
+
+    thetas = [np.array(t) for t in model['thetas']]
+    scores = np.array([sigmoid(x_b @ theta) for theta in thetas])
+    probs = {house: float(s) for house, s in zip(model['houses'], scores / scores.sum())}
     return max(probs, key=probs.get), probs
 
 
@@ -594,12 +618,14 @@ class ResultScreen(QWidget):
 # ── Main Window ───────────────────────────────────────────────────────────
 
 class SortingHatApp(QMainWindow):
-    def __init__(self):
+    def __init__(self, model: dict, answer_values: dict):
         super().__init__()
         self.setWindowTitle('Hogwarts Sorting Hat')
         self.setFixedSize(780, 580)
         self.setStyleSheet(BASE_STYLE)
 
+        self._model         = model
+        self._answer_values = answer_values
         self._lang    = 'en'
         self._answers = {}
         self._current = 0
@@ -644,7 +670,7 @@ class SortingHatApp(QMainWindow):
         if self._current < total:
             self.question.load(QUESTIONS[self._lang][self._current], self._current)
         else:
-            house, probs = predict_house(self._answers)
+            house, probs = predict_house(self._answers, self._model, self._answer_values)
             self.result.set_lang(self._lang)
             self.result.show_result(house, probs)
             self._show(self.result)
@@ -654,8 +680,20 @@ class SortingHatApp(QMainWindow):
 
 
 if __name__ == '__main__':
+    try:
+        model = load_model()
+    except FileNotFoundError:
+        print(f"Error: '{WEIGHTS_PATH}' not found. Run 'python3 src/logreg_train.py {TRAIN_DATA_PATH}' first.")
+        sys.exit(1)
+
+    try:
+        answer_values = compute_answer_values(model['features'])
+    except FileNotFoundError:
+        print(f"Error: file not found '{TRAIN_DATA_PATH}'")
+        sys.exit(1)
+
     app = QApplication(sys.argv)
     app.setFont(QFont('Arial', 12))
-    window = SortingHatApp()
+    window = SortingHatApp(model, answer_values)
     window.show()
     sys.exit(app.exec_())
