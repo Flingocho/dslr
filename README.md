@@ -249,5 +249,5 @@ All three converge to the same accuracy on this dataset. `describe.py` also incl
 ---
 
 <div align="center">
-  Created by <a href="https://github.com/Flingocho">Flingocho</a> & <a href="https://github.com/tekuron">tekuron</a>
+  Created by <a href="https://github.com/Flingocho">Flingocho</a> & <a href="https://github.com/Nisp3ro">Nisp3ro</a>
 </div>
